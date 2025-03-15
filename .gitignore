@@ -1,0 +1,8 @@
+# Các file môi trường nhạy cảm
+.env
+.env.local
+.env.*.local
+
+
+.idea/
+__pycache__/
