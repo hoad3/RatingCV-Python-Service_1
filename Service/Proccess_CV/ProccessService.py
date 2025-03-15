@@ -86,14 +86,12 @@ def analyze_cv(content: str, filename: str):
 
         content_text = response["message"]["content"].strip()
 
-        # Kiểm tra dữ liệu có đúng JSON không
         if not content_text.startswith("{") and not content_text.startswith("["):
             return {"error": "Invalid JSON format from Ollama"}
 
-        # Parse JSON từ Ollama
         parsed_data = json.loads(content_text)
 
-        # **Thêm 'ten_cv' vào dữ liệu**
+
         parsed_data["ten_cv"] = filename
 
         return parsed_data
@@ -105,16 +103,14 @@ def analyze_cv(content: str, filename: str):
         return {"error": str(e)}
 
 async def upload_cv_service(file_content: bytes, filename: str):
-    """Nhận file CV, chuyển thành TXT để phân tích và lưu file gốc lên Kafka"""
+
     text_content = extract_text_from_file(file_content, filename)
     if not text_content:
         logging.error(f"Không thể trích xuất nội dung từ {filename}")
         return
 
-    # Phân tích nội dung CV
     extracted_data = analyze_cv(text_content, filename)
 
-    # Gửi dữ liệu phân tích lên Kafka
     future = producer.send(TOPIC_CV_DATA, extracted_data)
     result = future.get(timeout=20)  # Đợi phản hồi
 

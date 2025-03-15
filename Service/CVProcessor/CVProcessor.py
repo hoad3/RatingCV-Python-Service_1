@@ -7,6 +7,7 @@ import logging
 import docx
 import ollama
 
+from Service.CVProcessor.CVProcessorInfo import CVDetailExtractor
 from Service.Kafka import KafkaClient
 from Service.Xu_ly.Xu_ly_file import convert_pdf_to_txt
 
@@ -25,19 +26,21 @@ class CVAnalyzer:
     @staticmethod
     def analyze(content: str, filename: str) -> dict:
         prompt = f"""
-        Hãy phân tích CV sau và trả về đúng định dạng JSON:
+        Hãy phân tích CV sau và trả về đúng định dạng JSON với các trường sau:
         {{
-            "name": "Họ và tên đầy đủ...",
-            "phone": "Số điện thoại...",
+            "name": "Họ và tên đầy đủ sẽ nằm trên cùng một dòng, Chữ cái đầu của mỗi từ viết hoa, không được phép để trống.",   
+            "phone": "Số điện thoại 10 hoặc 11 số",
             "email": "Email",
             "address": "Địa chỉ",
-            "github": "Link GitHub"
+            "github": "Link GitHub (nếu có)"
         }}
 
         CV:
         {content}
 
-        Chỉ trả về JSON thuần túy.
+        Lưu ý:
+            - Chỉ trả về JSON thuần túy, không có văn bản bổ sung.
+            - Không được thiếu bất kỳ trường nào.
         """
         try:
             response = ollama.chat(model="llama3.2:latest", messages=[{"role": "user", "content": prompt}])
@@ -58,14 +61,13 @@ class CVProcessor:
     async def worker(self):
         while True:
             file_content, filename = await self.queue.get()
-            self.processing = True
             try:
                 await self.process_cv(file_content, filename)
             except Exception as e:
                 logging.error(f"Lỗi khi xử lý file {filename}: {e}")
             finally:
                 self.queue.task_done()
-                self.processing = False
+
 
     async def add_task(self, file_content: bytes, filename: str):
         await self.queue.put((file_content, filename))
@@ -78,6 +80,9 @@ class CVProcessor:
 
         extracted_data = CVAnalyzer.analyze(text_content, filename)
         self.kafka_client.send("cv-data", extracted_data)
+
+        detailed_info = CVDetailExtractor.extract_details(text_content)
+        self.kafka_client.send("info-ungvien", detailed_info)
 
         encoded_file = base64.b64encode(file_content).decode("utf-8")
         file_message = {"filename": filename, "file_content": encoded_file}
