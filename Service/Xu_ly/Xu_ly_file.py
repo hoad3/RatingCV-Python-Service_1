@@ -1,7 +1,6 @@
-import io
-import os
+import pdfplumber
 import re
-from pdfminer.high_level import extract_text
+import io
 
 def remove_icons(text):
     """
@@ -15,12 +14,10 @@ def convert_pdf_to_txt(file_content: bytes) -> str:
     :param file_content: Nội dung file PDF dưới dạng bytes
     :return: Chuỗi văn bản đã xử lý
     """
-
-    text = extract_text(io.BytesIO(file_content))
-
+    text = ""
+    with pdfplumber.open(io.BytesIO(file_content)) as pdf:
+        for page in pdf.pages:
+            text += page.extract_text() + "\n" if page.extract_text() else ""
 
     cleaned_text = remove_icons(text)
-
-
     return cleaned_text.strip()
-
