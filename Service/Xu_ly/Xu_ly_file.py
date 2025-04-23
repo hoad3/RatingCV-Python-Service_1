@@ -1,3 +1,4 @@
+import fitz
 import pdfplumber
 import re
 import io

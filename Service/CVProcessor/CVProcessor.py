@@ -3,7 +3,7 @@ import base64
 import io
 import json
 import logging
-
+import lmstudio as lm
 import docx
 import ollama
 from kafka import KafkaProducer, KafkaConsumer
@@ -11,6 +11,7 @@ from Service.CVProcessor import extract_name
 from Service.CVProcessor.CVProcessorInfo import CVDetailExtractor
 from Service.Kafka import KafkaClient
 from Service.Xu_ly.Xu_ly_file import convert_pdf_to_txt
+from Service.CVProcessor.extract_github import GitHubExtractor
 
 
 logging.basicConfig(level=logging.DEBUG)
@@ -47,9 +48,9 @@ class CVAnalyzer:
                 "name": "Họ và tên đầy đủ của ứng viên.",
                 "phone": "Số điện thoại 10 hoặc 11 chữ số.",
                 "email": "Địa chỉ email.",
-                "address": "Địa chỉ nhà hoặc nơi làm việc.",
+                "address": "Địa chỉ nhà hoặc nơi làm việc nếu không tìm thấy địa chỉ cụ thể thì thêm vào là (Việt Nam).",
                 "github": "Đường dẫn GitHub cá nhân nếu có, nếu không có thì trả về 'N/A'.",
-                "hoc_van": "Tên trường học (bắt đầu bằng 'Đại học', 'Cao đẳng' hoặc chứa 'University').",
+                "hoc_van": "Tìm vả trả về dữ liệu cho trường này gồm tên trường học hoặc cơ sở giáo dục và điểm GPA gộp tất cả dữ liệu tìm được thành một chuỗi (Tên gọi của cơ sở giáo dục có trong CV (bắt đầu bằng 'Đại học', 'Trung tâm', 'Cao đẳng' hoặc chứa 'University'), Điểm GPA (tìm và trả về điểm GPA nếu không có thì chỉ trả về tên cơ sở giáo dục.))",
                 "projects": [
                     {{
                         "ten_du_an": "Tên đầy đủ của dự án (GIỮ NGUYÊN 100%, KHÔNG SỬA KÝ TỰ, VIẾT ĐÚNG NHƯ TRONG VĂN BẢN ĐƯA RA). Nếu có lỗi sai, trả về lỗi 'Tên bị thay đổi'.",
@@ -58,28 +59,37 @@ class CVAnalyzer:
                         "ngay_ket_thuc": "Ngày dự án kết thúc thường nằm tiếp nối phía sau ngày bắt đầu",
                         "team_size": "Số lượng người tham gia (nếu có 'dự án cá nhân' thì team_size = 1).",
                         "role": "Vai trò trong dự án.",
-                        "github_du_an": "Link GitHub chính xác của dự án, lấy toàn bộ nội dung trên dòng chứa link GitHub gần nhất có liên quan đến dự án. Nếu không tìm thấy, trả về 'N/A' nhưng không tự động thêm giá trị khác."
                     }}
                 ]
-            
-            }}
-            
-        """
 
+            }}
+
+        """
         try:
-            response = ollama.chat(model="gemma3:4b", messages=[{"role": "user", "content": prompt}])
-            content_text = response.get("message", {}).get("content", "").strip()
+            model = lm.llm("gemma-3-4b-it-qat")
+            response = model.respond(prompt)
+            if hasattr(response, "text"):
+                content_text = response.text.strip()
+            elif hasattr(response, "content"):
+                content_text = response.content.strip()
+            else:
+                raise ValueError("Response không phải kiểu text, kiểm tra lại định dạng trả về!")
+
+            # Tiếp tục xử lý JSON
             if content_text.startswith("```json"):
-                content_text = content_text[7:].strip()  # Loại bỏ ```json
+                content_text = content_text[7:].strip()
             if content_text.endswith("```"):
                 content_text = content_text[:-3].strip()
+
             parsed_data = json.loads(content_text) if content_text.startswith("{") else {}
             parsed_data["ten_cv"] = filename
-            # Tách riêng hoc_van
+            github_links = GitHubExtractor.extract_github_links(content)
+            parsed_data["github_link"] = github_links
             hoc_van = parsed_data.pop("hoc_van", "không có thông tin")
             return parsed_data, hoc_van
         except Exception as e:
-            return {"error": str(e)}
+            logging.error(f"Error when calling LM Studio Model: {str(e)}")
+            return {"error": str(e)}, "không có thông tin"
 
 class CVProcessor:
     def __init__(self, kafka_client: KafkaClient):
