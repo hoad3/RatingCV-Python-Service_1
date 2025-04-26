@@ -1,6 +1,9 @@
 import logging
+
 from fastapi import APIRouter, UploadFile, File, FastAPI, HTTPException
 import asyncio
+
+from Service.AHP.CadidateAHP import CadidateAHP
 from Service.CVProcessor.CVProcessor import CVProcessor
 from Service.Kafka.KafkaClient import KafkaClient
 from fastapi.middleware.cors import CORSMiddleware
@@ -64,13 +67,10 @@ async def upload_cv(files: list[UploadFile] = File(...)):
 async def calculate_ahp(criteria_matrix: CriteriaMatrix):
 
     try:
-        # Chuyển đổi ma trận thành list of lists
         matrix_data = [list(row) for row in criteria_matrix.matrix]
         
-        # Khởi tạo calculator với ma trận tiêu chí
         calculator = AHPCalculator(matrix_data)
         
-        # Tính toán tất cả các chỉ số
         metrics = calculator.calculate_all_metrics()
         
         return metrics
@@ -82,6 +82,23 @@ async def calculate_ahp(criteria_matrix: CriteriaMatrix):
             status_code=500,
             detail=f"Lỗi khi tính toán AHP: {str(e)}"
         )
+
+class MatrixInput(BaseModel):
+    matrix: List[List[float]]
+    ri_value: float
+@router.post("/calculate_ahp_cadidate")
+async def calculate_ahp_cadidate(input_data: MatrixInput):
+    try:
+        ahp = CadidateAHP(input_data.matrix, input_data.ri_value)
+
+        if not ahp.validate_matrix():
+            raise HTTPException(status_code=400, detail="Ma trận không hợp lệ. Đảm bảo tính đối xứng nghịch đảo và đường chéo bằng 1.")
+
+        result = ahp.calculate_CadidateAHP()
+        return result
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 #
 # app.include_router(router)
